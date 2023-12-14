@@ -19,12 +19,7 @@ jobs:
           - debian-12
         arch:
           - amd64
-    runs-on:
-      - self-hosted 
-      - cpu-16
-      - mem-8G
-      - arch-${{ matrix.arch }}
-      - image-${{ matrix.os }}
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
