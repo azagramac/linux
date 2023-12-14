@@ -20,7 +20,7 @@ jobs:
         arch:
           - amd64
     runs-on:
-      - self-hosted
+      - debian
       - cpu-16
       - mem-8G
       - arch-${{ matrix.arch }}
