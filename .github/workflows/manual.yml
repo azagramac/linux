@@ -43,14 +43,14 @@ jobs:
           sudo apt-get install --yes pahole || true
       - name: Configure git
         run: |
-          git config user.email "azagramac@gmail.com"
+          git config user.email ${{ secrets.GIT_MAIL }}
           git config user.name "Linux kernel build"
       - name: Generate version string
         env:
           PKGARCH: "${{ matrix.arch }}"
           PKGOS: "${{ matrix.os }}"
         run: |
-          VERSION="$(make kernelversion)-${PKGARCH}-$(date -u +%Y%m%d%H%M)-$(echo ${PKGOS} | sed "s/-//g")"
+          VERSION="$(make kernelversion)-${PKGARCH}-$(date -u +%d%m%Y%H%M)-$(echo ${PKGOS} | sed "s/-//g")"
           echo "${VERSION}"
           echo "${VERSION}" > ../.version
       - name: Update the configuration
@@ -66,7 +66,7 @@ jobs:
           mv .config.new .config
       - name: Build the kernel
         env:
-          DEBEMAIL: "azagramac@gmail.com"
+          DEBEMAIL: ${{ secrets.GIT_MAIL }}
           DEBFULLNAME: "Linux kernel build"
           KDEB_CHANGELOG_DIST: "${{ matrix.os }}"
           KDEB_COMPRESS: "zstd"
@@ -75,7 +75,7 @@ jobs:
           [ "${PKGOS}" = "debian-12" ] && export KDEB_COMPRESS="gzip"
           export KDEB_PKGVERSION="$(cat ../.version)"
           export KDEB_SOURCENAME="linux-azagramac-${KDEB_PKGVERSION}"
-          make deb-pkg -j16 || make deb-pkg -j16
+          make deb-pkg -j24 || make deb-pkg -j24
       - name: Prepare the artifacts
         run: |
           mkdir out/
