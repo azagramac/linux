@@ -31,6 +31,8 @@
 #include "dml_assert.h"
 
 #define DML2_MAX_FMT_420_BUFFER_WIDTH 4096
+#define TB_BORROWED_MAX 400
+
 // ---------------------------
 //  Declaration Begins
 // ---------------------------
@@ -2782,6 +2784,8 @@ static dml_float_t TruncToValidBPP(
 		}
 	}
 
+	*RequiredSlots = (dml_uint_t)(dml_ceil(DesiredBPP / MaxLinkBPP * 64, 1));
+
 	if (DesiredBPP == 0) {
 		if (DSCEnable) {
 			if (MaxLinkBPP < MinDSCBPP) {
@@ -2810,10 +2814,6 @@ static dml_float_t TruncToValidBPP(
 			return DesiredBPP;
 		}
 	}
-
-	*RequiredSlots = (dml_uint_t)(dml_ceil(DesiredBPP / MaxLinkBPP * 64, 1));
-
-	return __DML_DPP_INVALID__;
 } // TruncToValidBPP
 
 static void CalculateWatermarksMALLUseAndDRAMSpeedChangeSupport(
@@ -3790,9 +3790,9 @@ static void CalculateStutterEfficiency(struct display_mode_lib_scratch_st *scrat
 	dml_bool_t FoundCriticalSurface = false;
 
 	dml_uint_t TotalNumberOfActiveOTG = 0;
-	dml_float_t SinglePixelClock;
-	dml_uint_t SingleHTotal;
-	dml_uint_t SingleVTotal;
+	dml_float_t SinglePixelClock = 0;
+	dml_uint_t SingleHTotal = 0;
+	dml_uint_t SingleVTotal = 0;
 	dml_bool_t SameTiming = true;
 
 	dml_float_t LastStutterPeriod = 0.0;
@@ -5420,7 +5420,7 @@ static void CalculateOutputLink(
 					*OutBpp = TruncToValidBPP((1 - Downspreading / 100) * 13500, OutputLinkDPLanes, HTotal, HActive, PixelClockBackEnd, ForcedOutputLinkBPP, LinkDSCEnable, Output,
 												OutputFormat, DSCInputBitPerComponent, NumberOfDSCSlices, (dml_uint_t)AudioSampleRate, AudioSampleLayout, ODMModeNoDSC, ODMModeDSC, RequiredSlots);
 
-					if (OutBpp == 0 && PHYCLKD32PerState < 20000 / 32 && DSCEnable == dml_dsc_enable_if_necessary && ForcedOutputLinkBPP == 0) {
+					if (*OutBpp == 0 && PHYCLKD32PerState < 20000 / 32 && DSCEnable == dml_dsc_enable_if_necessary && ForcedOutputLinkBPP == 0) {
 						*RequiresDSC = true;
 						LinkDSCEnable = true;
 						*OutBpp = TruncToValidBPP((1 - Downspreading / 100) * 13500, OutputLinkDPLanes, HTotal, HActive, PixelClockBackEnd, ForcedOutputLinkBPP, LinkDSCEnable, Output,
@@ -6229,7 +6229,7 @@ static void set_calculate_prefetch_schedule_params(struct display_mode_lib_st *m
 				CalculatePrefetchSchedule_params->GPUVMEnable = mode_lib->ms.cache_display_cfg.plane.GPUVMEnable;
 				CalculatePrefetchSchedule_params->HostVMEnable = mode_lib->ms.cache_display_cfg.plane.HostVMEnable;
 				CalculatePrefetchSchedule_params->HostVMMaxNonCachedPageTableLevels = mode_lib->ms.cache_display_cfg.plane.HostVMMaxPageTableLevels;
-				CalculatePrefetchSchedule_params->HostVMMinPageSize = mode_lib->ms.soc.hostvm_min_page_size_kbytes;
+				CalculatePrefetchSchedule_params->HostVMMinPageSize = mode_lib->ms.soc.hostvm_min_page_size_kbytes * 1024;
 				CalculatePrefetchSchedule_params->DynamicMetadataEnable = mode_lib->ms.cache_display_cfg.plane.DynamicMetadataEnable[k];
 				CalculatePrefetchSchedule_params->DynamicMetadataVMEnabled = mode_lib->ms.ip.dynamic_metadata_vm_enabled;
 				CalculatePrefetchSchedule_params->DynamicMetadataLinesBeforeActiveRequired = mode_lib->ms.cache_display_cfg.plane.DynamicMetadataLinesBeforeActiveRequired[k];
@@ -9446,13 +9446,13 @@ void dml_core_mode_programming(struct display_mode_lib_st *mode_lib, const struc
 		CalculateWatermarks_params->CompressedBufferSizeInkByte = locals->CompressedBufferSizeInkByte;
 
 		// Output
-		CalculateWatermarks_params->Watermark = &s->dummy_watermark; // Watermarks *Watermark
-		CalculateWatermarks_params->DRAMClockChangeSupport = &mode_lib->ms.support.DRAMClockChangeSupport[0];
-		CalculateWatermarks_params->MaxActiveDRAMClockChangeLatencySupported = &s->dummy_single_array[0][0]; // dml_float_t *MaxActiveDRAMClockChangeLatencySupported[]
-		CalculateWatermarks_params->SubViewportLinesNeededInMALL = &mode_lib->ms.SubViewportLinesNeededInMALL[j]; // dml_uint_t SubViewportLinesNeededInMALL[]
-		CalculateWatermarks_params->FCLKChangeSupport = &mode_lib->ms.support.FCLKChangeSupport[0];
-		CalculateWatermarks_params->MaxActiveFCLKChangeLatencySupported = &s->dummy_single[0]; // dml_float_t *MaxActiveFCLKChangeLatencySupported
-		CalculateWatermarks_params->USRRetrainingSupport = &mode_lib->ms.support.USRRetrainingSupport[0];
+		CalculateWatermarks_params->Watermark = &locals->Watermark; // Watermarks *Watermark
+		CalculateWatermarks_params->DRAMClockChangeSupport = &locals->DRAMClockChangeSupport;
+		CalculateWatermarks_params->MaxActiveDRAMClockChangeLatencySupported = locals->MaxActiveDRAMClockChangeLatencySupported; // dml_float_t *MaxActiveDRAMClockChangeLatencySupported[]
+		CalculateWatermarks_params->SubViewportLinesNeededInMALL = locals->SubViewportLinesNeededInMALL; // dml_uint_t SubViewportLinesNeededInMALL[]
+		CalculateWatermarks_params->FCLKChangeSupport = &locals->FCLKChangeSupport;
+		CalculateWatermarks_params->MaxActiveFCLKChangeLatencySupported = &locals->MaxActiveFCLKChangeLatencySupported; // dml_float_t *MaxActiveFCLKChangeLatencySupported
+		CalculateWatermarks_params->USRRetrainingSupport = &locals->USRRetrainingSupport;
 
 		CalculateWatermarksMALLUseAndDRAMSpeedChangeSupport(
 			&mode_lib->scratch,
@@ -9460,8 +9460,10 @@ void dml_core_mode_programming(struct display_mode_lib_st *mode_lib, const struc
 
 		/* Copy the calculated watermarks to mp.Watermark as the getter functions are
 		 * implemented by the DML team to copy the calculated values from the mp.Watermark interface.
+		 * &mode_lib->mp.Watermark and &locals->Watermark are the same address, memcpy may lead to
+		 * unexpected behavior. memmove should be used.
 		 */
-		memcpy(&mode_lib->mp.Watermark, CalculateWatermarks_params->Watermark, sizeof(struct Watermarks));
+		memmove(&mode_lib->mp.Watermark, CalculateWatermarks_params->Watermark, sizeof(struct Watermarks));
 
 		for (k = 0; k < mode_lib->ms.num_active_planes; ++k) {
 			if (mode_lib->ms.cache_display_cfg.writeback.WritebackEnable[k] == true) {
@@ -10214,6 +10216,7 @@ dml_get_var_func(fraction_of_urgent_bandwidth_imm_flip, dml_float_t, mode_lib->m
 dml_get_var_func(urgent_latency, dml_float_t, mode_lib->mp.UrgentLatency);
 dml_get_var_func(clk_dcf_deepsleep, dml_float_t, mode_lib->mp.DCFCLKDeepSleep);
 dml_get_var_func(wm_writeback_dram_clock_change, dml_float_t, mode_lib->mp.Watermark.WritebackDRAMClockChangeWatermark);
+dml_get_var_func(wm_writeback_urgent, dml_float_t, mode_lib->mp.Watermark.WritebackUrgentWatermark);
 dml_get_var_func(stutter_efficiency, dml_float_t, mode_lib->mp.StutterEfficiency);
 dml_get_var_func(stutter_efficiency_no_vblank, dml_float_t, mode_lib->mp.StutterEfficiencyNotIncludingVBlank);
 dml_get_var_func(stutter_efficiency_z8, dml_float_t, mode_lib->mp.Z8StutterEfficiency);

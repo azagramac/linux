@@ -119,7 +119,6 @@ static inline void journal_wake(struct journal *j)
 {
 	wake_up(&j->wait);
 	closure_wake_up(&j->async_wait);
-	closure_wake_up(&j->preres_wait);
 }
 
 static inline struct journal_buf *journal_cur_buf(struct journal *j)
@@ -239,8 +238,6 @@ bch2_journal_add_entry(struct journal *j, struct journal_res *res,
 
 static inline bool journal_entry_empty(struct jset *j)
 {
-	struct jset_entry *i;
-
 	if (j->seq != j->last_seq)
 		return false;
 
@@ -267,7 +264,8 @@ static inline union journal_res_state journal_state_buf_put(struct journal *j, u
 }
 
 bool bch2_journal_entry_close(struct journal *);
-void bch2_journal_buf_put_final(struct journal *, u64, bool);
+void bch2_journal_do_writes(struct journal *);
+void bch2_journal_buf_put_final(struct journal *, u64);
 
 static inline void __bch2_journal_buf_put(struct journal *j, unsigned idx, u64 seq)
 {
@@ -275,7 +273,7 @@ static inline void __bch2_journal_buf_put(struct journal *j, unsigned idx, u64 s
 
 	s = journal_state_buf_put(j, idx);
 	if (!journal_state_count(s, idx))
-		bch2_journal_buf_put_final(j, seq, idx == s.unwritten_idx);
+		bch2_journal_buf_put_final(j, seq);
 }
 
 static inline void bch2_journal_buf_put(struct journal *j, unsigned idx, u64 seq)
@@ -285,7 +283,7 @@ static inline void bch2_journal_buf_put(struct journal *j, unsigned idx, u64 seq
 	s = journal_state_buf_put(j, idx);
 	if (!journal_state_count(s, idx)) {
 		spin_lock(&j->lock);
-		bch2_journal_buf_put_final(j, seq, idx == s.unwritten_idx);
+		bch2_journal_buf_put_final(j, seq);
 		spin_unlock(&j->lock);
 	}
 }
@@ -374,7 +372,7 @@ static inline int bch2_journal_res_get(struct journal *j, struct journal_res *re
 	int ret;
 
 	EBUG_ON(res->ref);
-	EBUG_ON(!test_bit(JOURNAL_STARTED, &j->flags));
+	EBUG_ON(!test_bit(JOURNAL_running, &j->flags));
 
 	res->u64s = u64s;
 
@@ -420,12 +418,13 @@ struct bch_dev;
 
 static inline void bch2_journal_set_replay_done(struct journal *j)
 {
-	BUG_ON(!test_bit(JOURNAL_STARTED, &j->flags));
-	set_bit(JOURNAL_REPLAY_DONE, &j->flags);
+	BUG_ON(!test_bit(JOURNAL_running, &j->flags));
+	set_bit(JOURNAL_replay_done, &j->flags);
 }
 
 void bch2_journal_unblock(struct journal *);
 void bch2_journal_block(struct journal *);
+struct journal_buf *bch2_next_write_buffer_flush_journal_buf(struct journal *j, u64 max_seq);
 
 void __bch2_journal_debug_to_text(struct printbuf *, struct journal *);
 void bch2_journal_debug_to_text(struct printbuf *, struct journal *);
