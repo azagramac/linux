@@ -11,6 +11,7 @@
 #define __ASM_HUGETLB_H
 
 #include <asm/cacheflush.h>
+#include <asm/mte.h>
 #include <asm/page.h>
 
 #ifdef CONFIG_ARCH_ENABLE_HUGEPAGE_MIGRATION
@@ -21,6 +22,13 @@ extern bool arch_hugetlb_migration_supported(struct hstate *h);
 static inline void arch_clear_hugetlb_flags(struct folio *folio)
 {
 	clear_bit(PG_dcache_clean, &folio->flags);
+
+#ifdef CONFIG_ARM64_MTE
+	if (system_supports_mte()) {
+		clear_bit(PG_mte_tagged, &folio->flags);
+		clear_bit(PG_mte_lock, &folio->flags);
+	}
+#endif
 }
 #define arch_clear_hugetlb_flags arch_clear_hugetlb_flags
 
@@ -46,7 +54,7 @@ extern pte_t huge_ptep_clear_flush(struct vm_area_struct *vma,
 extern void huge_pte_clear(struct mm_struct *mm, unsigned long addr,
 			   pte_t *ptep, unsigned long sz);
 #define __HAVE_ARCH_HUGE_PTEP_GET
-extern pte_t huge_ptep_get(pte_t *ptep);
+extern pte_t huge_ptep_get(struct mm_struct *mm, unsigned long addr, pte_t *ptep);
 
 void __init arm64_hugetlb_cma_reserve(void);
 

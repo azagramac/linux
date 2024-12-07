@@ -247,7 +247,8 @@ ipu6_pkg_dir_configure_spc(struct ipu6_device *isp,
 		dma_addr = sg_dma_address(isp->psys->fw_sgt.sgl);
 
 	pg_offset = server_fw_addr - dma_addr;
-	prog = (struct ipu6_cell_program *)((u64)isp->cpd_fw->data + pg_offset);
+	prog = (struct ipu6_cell_program *)((uintptr_t)isp->cpd_fw->data +
+					    pg_offset);
 	spc_base = base + prog->regs_addr;
 	if (spc_base != (base + hw_variant->spc_offset))
 		dev_warn(&isp->pdev->dev,
@@ -280,12 +281,12 @@ void ipu6_configure_spc(struct ipu6_device *isp,
 		ipu6_pkg_dir_configure_spc(isp, hw_variant, pkg_dir_idx, base,
 					   pkg_dir, pkg_dir_dma_addr);
 }
-EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, INTEL_IPU6);
+EXPORT_SYMBOL_NS_GPL(ipu6_configure_spc, "INTEL_IPU6");
 
 #define IPU6_ISYS_CSI2_NPORTS		4
 #define IPU6SE_ISYS_CSI2_NPORTS		4
 #define IPU6_TGL_ISYS_CSI2_NPORTS	8
-#define IPU6EP_MTL_ISYS_CSI2_NPORTS	4
+#define IPU6EP_MTL_ISYS_CSI2_NPORTS	6
 
 static void ipu6_internal_pdata_init(struct ipu6_device *isp)
 {
@@ -390,20 +391,18 @@ ipu6_isys_init(struct pci_dev *pdev, struct device *parent,
 	isys_adev = ipu6_bus_initialize_device(pdev, parent, pdata, ctrl,
 					       IPU6_ISYS_NAME);
 	if (IS_ERR(isys_adev)) {
-		dev_err_probe(dev, PTR_ERR(isys_adev),
-			      "ipu6_bus_initialize_device isys failed\n");
 		kfree(pdata);
-		return ERR_CAST(isys_adev);
+		return dev_err_cast_probe(dev, isys_adev,
+				"ipu6_bus_initialize_device isys failed\n");
 	}
 
 	isys_adev->mmu = ipu6_mmu_init(dev, base, ISYS_MMID,
 				       &ipdata->hw_variant);
 	if (IS_ERR(isys_adev->mmu)) {
-		dev_err_probe(dev, PTR_ERR(isys_adev->mmu),
-			      "ipu6_mmu_init(isys_adev->mmu) failed\n");
 		put_device(&isys_adev->auxdev.dev);
 		kfree(pdata);
-		return ERR_CAST(isys_adev->mmu);
+		return dev_err_cast_probe(dev, isys_adev->mmu,
+				"ipu6_mmu_init(isys_adev->mmu) failed\n");
 	}
 
 	isys_adev->mmu->dev = &isys_adev->auxdev.dev;
@@ -436,20 +435,18 @@ ipu6_psys_init(struct pci_dev *pdev, struct device *parent,
 	psys_adev = ipu6_bus_initialize_device(pdev, parent, pdata, ctrl,
 					       IPU6_PSYS_NAME);
 	if (IS_ERR(psys_adev)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(psys_adev),
-			      "ipu6_bus_initialize_device psys failed\n");
 		kfree(pdata);
-		return ERR_CAST(psys_adev);
+		return dev_err_cast_probe(&pdev->dev, psys_adev,
+				"ipu6_bus_initialize_device psys failed\n");
 	}
 
 	psys_adev->mmu = ipu6_mmu_init(&pdev->dev, base, PSYS_MMID,
 				       &ipdata->hw_variant);
 	if (IS_ERR(psys_adev->mmu)) {
-		dev_err_probe(&pdev->dev, PTR_ERR(psys_adev->mmu),
-			      "ipu6_mmu_init(psys_adev->mmu) failed\n");
 		put_device(&psys_adev->auxdev.dev);
 		kfree(pdata);
-		return ERR_CAST(psys_adev->mmu);
+		return dev_err_cast_probe(&pdev->dev, psys_adev->mmu,
+				"ipu6_mmu_init(psys_adev->mmu) failed\n");
 	}
 
 	psys_adev->mmu->dev = &psys_adev->auxdev.dev;
@@ -576,9 +573,7 @@ static int ipu6_pci_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (ret)
 		return dev_err_probe(dev, ret, "Failed to set DMA mask\n");
 
-	ret = dma_set_max_seg_size(dev, UINT_MAX);
-	if (ret)
-		return dev_err_probe(dev, ret, "Failed to set max_seg_size\n");
+	dma_set_max_seg_size(dev, UINT_MAX);
 
 	ret = ipu6_pci_config_setup(pdev, isp->hw_ver);
 	if (ret)
@@ -727,9 +722,6 @@ static void ipu6_pci_remove(struct pci_dev *pdev)
 	pm_runtime_forbid(&pdev->dev);
 	pm_runtime_get_noresume(&pdev->dev);
 
-	pci_release_regions(pdev);
-	pci_disable_device(pdev);
-
 	release_firmware(isp->cpd_fw);
 
 	ipu6_mmu_cleanup(psys_mmu);
@@ -761,6 +753,9 @@ static void ipu6_pci_reset_done(struct pci_dev *pdev)
  */
 static int ipu6_suspend(struct device *dev)
 {
+	struct pci_dev *pdev = to_pci_dev(dev);
+
+	synchronize_irq(pdev->irq);
 	return 0;
 }
 
@@ -845,7 +840,7 @@ static struct pci_driver ipu6_pci_driver = {
 
 module_pci_driver(ipu6_pci_driver);
 
-MODULE_IMPORT_NS(INTEL_IPU_BRIDGE);
+MODULE_IMPORT_NS("INTEL_IPU_BRIDGE");
 MODULE_AUTHOR("Sakari Ailus <sakari.ailus@linux.intel.com>");
 MODULE_AUTHOR("Tianshu Qiu <tian.shu.qiu@intel.com>");
 MODULE_AUTHOR("Bingbu Cao <bingbu.cao@intel.com>");

@@ -883,29 +883,37 @@ static const struct drm_connector_funcs hdmi_connector_funcs = {
 static int hdmi_get_modes(struct drm_connector *connector)
 {
 	struct hdmi_context *hdata = connector_to_hdmi(connector);
-	struct edid *edid;
+	const struct drm_display_info *info = &connector->display_info;
+	const struct drm_edid *drm_edid;
 	int ret;
 
 	if (!hdata->ddc_adpt)
+		goto no_edid;
+
+	drm_edid = drm_edid_read_ddc(connector, hdata->ddc_adpt);
+
+	ret = drm_edid_connector_update(connector, drm_edid);
+	if (ret)
 		return 0;
 
-	edid = drm_get_edid(connector, hdata->ddc_adpt);
-	if (!edid)
-		return 0;
+	cec_notifier_set_phys_addr(hdata->notifier, info->source_physical_address);
 
-	hdata->dvi_mode = !connector->display_info.is_hdmi;
+	if (!drm_edid)
+		goto no_edid;
+
+	hdata->dvi_mode = !info->is_hdmi;
 	DRM_DEV_DEBUG_KMS(hdata->dev, "%s : width[%d] x height[%d]\n",
 			  (hdata->dvi_mode ? "dvi monitor" : "hdmi monitor"),
-			  edid->width_cm, edid->height_cm);
+			  info->width_mm / 10, info->height_mm / 10);
 
-	drm_connector_update_edid_property(connector, edid);
-	cec_notifier_set_phys_addr_from_edid(hdata->notifier, edid);
+	ret = drm_edid_connector_add_modes(connector);
 
-	ret = drm_add_edid_modes(connector, edid);
-
-	kfree(edid);
+	drm_edid_free(drm_edid);
 
 	return ret;
+
+no_edid:
+	return drm_add_modes_noedid(connector, 640, 480);
 }
 
 static int hdmi_find_phy_conf(struct hdmi_context *hdata, u32 pixel_clock)
@@ -2118,7 +2126,7 @@ static const struct dev_pm_ops exynos_hdmi_pm_ops = {
 
 struct platform_driver hdmi_driver = {
 	.probe		= hdmi_probe,
-	.remove_new	= hdmi_remove,
+	.remove		= hdmi_remove,
 	.driver		= {
 		.name	= "exynos-hdmi",
 		.pm	= &exynos_hdmi_pm_ops,

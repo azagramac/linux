@@ -202,8 +202,8 @@ static int dcmipp_create_subdevs(struct dcmipp_device *dcmipp)
 	return 0;
 
 err_init_entity:
-	while (i > 0)
-		dcmipp->pipe_cfg->ents[i - 1].release(dcmipp->entity[i - 1]);
+	while (i-- > 0)
+		dcmipp->pipe_cfg->ents[i].release(dcmipp->entity[i]);
 	return ret;
 }
 
@@ -583,7 +583,7 @@ static const struct dev_pm_ops dcmipp_pm_ops = {
 
 static struct platform_driver dcmipp_pdrv = {
 	.probe		= dcmipp_probe,
-	.remove_new	= dcmipp_remove,
+	.remove		= dcmipp_remove,
 	.driver		= {
 		.name	= DCMIPP_PDEV_NAME,
 		.of_match_table = dcmipp_of_match,

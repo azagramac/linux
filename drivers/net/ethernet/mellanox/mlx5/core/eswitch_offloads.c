@@ -68,6 +68,7 @@
 #define MLX5_ESW_FT_OFFLOADS_DROP_RULE (1)
 
 #define MLX5_ESW_MAX_CTRL_EQS 4
+#define MLX5_ESW_DEFAULT_SF_COMP_EQS 8
 
 static struct esw_vport_tbl_namespace mlx5_esw_vport_tbl_mirror_ns = {
 	.max_fte = MLX5_ESW_VPORT_TBL_SIZE,
@@ -610,6 +611,13 @@ esw_setup_dests(struct mlx5_flow_destination *dest,
 						   1, 0, *i);
 			(*i)++;
 		}
+	}
+
+	if (attr->extra_split_ft) {
+		flow_act->flags |= FLOW_ACT_IGNORE_FLOW_LEVEL;
+		dest[*i].type = MLX5_FLOW_DESTINATION_TYPE_FLOW_TABLE;
+		dest[*i].ft = attr->extra_split_ft;
+		(*i)++;
 	}
 
 out:
@@ -2324,18 +2332,36 @@ out_free:
 	return err;
 }
 
+static void esw_mode_change(struct mlx5_eswitch *esw, u16 mode)
+{
+	mlx5_devcom_comp_lock(esw->dev->priv.hca_devcom_comp);
+	if (esw->dev->priv.flags & MLX5_PRIV_FLAGS_DISABLE_IB_ADEV ||
+	    mlx5_core_mp_enabled(esw->dev)) {
+		esw->mode = mode;
+		mlx5_rescan_drivers_locked(esw->dev);
+		mlx5_devcom_comp_unlock(esw->dev->priv.hca_devcom_comp);
+		return;
+	}
+
+	esw->dev->priv.flags |= MLX5_PRIV_FLAGS_DISABLE_IB_ADEV;
+	mlx5_rescan_drivers_locked(esw->dev);
+	esw->mode = mode;
+	esw->dev->priv.flags &= ~MLX5_PRIV_FLAGS_DISABLE_IB_ADEV;
+	mlx5_rescan_drivers_locked(esw->dev);
+	mlx5_devcom_comp_unlock(esw->dev->priv.hca_devcom_comp);
+}
+
 static int esw_offloads_start(struct mlx5_eswitch *esw,
 			      struct netlink_ext_ack *extack)
 {
 	int err;
 
-	esw->mode = MLX5_ESWITCH_OFFLOADS;
+	esw_mode_change(esw, MLX5_ESWITCH_OFFLOADS);
 	err = mlx5_eswitch_enable_locked(esw, esw->dev->priv.sriov.num_vfs);
 	if (err) {
 		NL_SET_ERR_MSG_MOD(extack,
 				   "Failed setting eswitch to offloads");
-		esw->mode = MLX5_ESWITCH_LEGACY;
-		mlx5_rescan_drivers(esw->dev);
+		esw_mode_change(esw, MLX5_ESWITCH_LEGACY);
 		return err;
 	}
 	if (esw->offloads.inline_mode == MLX5_INLINE_MODE_NONE) {
@@ -2519,8 +2545,11 @@ static void __esw_offloads_unload_rep(struct mlx5_eswitch *esw,
 				      struct mlx5_eswitch_rep *rep, u8 rep_type)
 {
 	if (atomic_cmpxchg(&rep->rep_data[rep_type].state,
-			   REP_LOADED, REP_REGISTERED) == REP_LOADED)
+			   REP_LOADED, REP_REGISTERED) == REP_LOADED) {
+		if (rep_type == REP_ETH)
+			__esw_offloads_unload_rep(esw, rep, REP_IB);
 		esw->offloads.rep_ops[rep_type]->unload(rep);
+	}
 }
 
 static void __unload_reps_all_vport(struct mlx5_eswitch *esw, u8 rep_type)
@@ -2609,7 +2638,7 @@ int mlx5_esw_offloads_load_rep(struct mlx5_eswitch *esw, struct mlx5_vport *vpor
 	return err;
 
 load_err:
-	mlx5_esw_offloads_devlink_port_unregister(esw, vport);
+	mlx5_esw_offloads_devlink_port_unregister(vport);
 	return err;
 }
 
@@ -2620,7 +2649,7 @@ void mlx5_esw_offloads_unload_rep(struct mlx5_eswitch *esw, struct mlx5_vport *v
 
 	mlx5_esw_offloads_rep_unload(esw, vport->vport);
 
-	mlx5_esw_offloads_devlink_port_unregister(esw, vport);
+	mlx5_esw_offloads_devlink_port_unregister(vport);
 }
 
 static int esw_set_slave_root_fdb(struct mlx5_core_dev *master,
@@ -3576,7 +3605,7 @@ static int esw_offloads_stop(struct mlx5_eswitch *esw,
 {
 	int err;
 
-	esw->mode = MLX5_ESWITCH_LEGACY;
+	esw_mode_change(esw, MLX5_ESWITCH_LEGACY);
 
 	/* If changing from switchdev to legacy mode without sriov enabled,
 	 * no need to create legacy fdb.
@@ -3762,7 +3791,6 @@ int mlx5_devlink_eswitch_mode_set(struct devlink *devlink, u16 mode,
 		err = esw_offloads_start(esw, extack);
 	} else if (mode == DEVLINK_ESWITCH_MODE_LEGACY) {
 		err = esw_offloads_stop(esw, extack);
-		mlx5_rescan_drivers(esw->dev);
 	} else {
 		err = -EINVAL;
 	}
@@ -4600,20 +4628,26 @@ mlx5_devlink_port_fn_max_io_eqs_get(struct devlink_port *port, u32 *max_io_eqs,
 		return -EOPNOTSUPP;
 	}
 
+	if (!MLX5_CAP_GEN_2(esw->dev, max_num_eqs_24b)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Device doesn't support getting the max number of EQs");
+		return -EOPNOTSUPP;
+	}
+
 	query_ctx = kzalloc(query_out_sz, GFP_KERNEL);
 	if (!query_ctx)
 		return -ENOMEM;
 
 	mutex_lock(&esw->state_lock);
 	err = mlx5_vport_get_other_func_cap(esw->dev, vport_num, query_ctx,
-					    MLX5_CAP_GENERAL);
+					    MLX5_CAP_GENERAL_2);
 	if (err) {
 		NL_SET_ERR_MSG_MOD(extack, "Failed getting HCA caps");
 		goto out;
 	}
 
 	hca_caps = MLX5_ADDR_OF(query_hca_cap_out, query_ctx, capability);
-	max_eqs = MLX5_GET(cmd_hca_cap, hca_caps, max_num_eqs);
+	max_eqs = MLX5_GET(cmd_hca_cap_2, hca_caps, max_num_eqs_24b);
 	if (max_eqs < MLX5_ESW_MAX_CTRL_EQS)
 		*max_io_eqs = 0;
 	else
@@ -4644,6 +4678,12 @@ mlx5_devlink_port_fn_max_io_eqs_set(struct devlink_port *port, u32 max_io_eqs,
 		return -EOPNOTSUPP;
 	}
 
+	if (!MLX5_CAP_GEN_2(esw->dev, max_num_eqs_24b)) {
+		NL_SET_ERR_MSG_MOD(extack,
+				   "Device doesn't support changing the max number of EQs");
+		return -EOPNOTSUPP;
+	}
+
 	if (check_add_overflow(max_io_eqs, MLX5_ESW_MAX_CTRL_EQS, &max_eqs)) {
 		NL_SET_ERR_MSG_MOD(extack, "Supplied value out of range");
 		return -EINVAL;
@@ -4655,22 +4695,34 @@ mlx5_devlink_port_fn_max_io_eqs_set(struct devlink_port *port, u32 max_io_eqs,
 
 	mutex_lock(&esw->state_lock);
 	err = mlx5_vport_get_other_func_cap(esw->dev, vport_num, query_ctx,
-					    MLX5_CAP_GENERAL);
+					    MLX5_CAP_GENERAL_2);
 	if (err) {
 		NL_SET_ERR_MSG_MOD(extack, "Failed getting HCA caps");
 		goto out;
 	}
 
 	hca_caps = MLX5_ADDR_OF(query_hca_cap_out, query_ctx, capability);
-	MLX5_SET(cmd_hca_cap, hca_caps, max_num_eqs, max_eqs);
+	MLX5_SET(cmd_hca_cap_2, hca_caps, max_num_eqs_24b, max_eqs);
+
+	if (mlx5_esw_is_sf_vport(esw, vport_num))
+		MLX5_SET(cmd_hca_cap_2, hca_caps, sf_eq_usage, 1);
 
 	err = mlx5_vport_set_other_func_cap(esw->dev, hca_caps, vport_num,
-					    MLX5_SET_HCA_CAP_OP_MOD_GENERAL_DEVICE);
+					    MLX5_SET_HCA_CAP_OP_MOD_GENERAL_DEVICE2);
 	if (err)
 		NL_SET_ERR_MSG_MOD(extack, "Failed setting HCA caps");
-
+	vport->max_eqs_set = true;
 out:
 	mutex_unlock(&esw->state_lock);
 	kfree(query_ctx);
 	return err;
+}
+
+int
+mlx5_devlink_port_fn_max_io_eqs_set_sf_default(struct devlink_port *port,
+					       struct netlink_ext_ack *extack)
+{
+	return mlx5_devlink_port_fn_max_io_eqs_set(port,
+						   MLX5_ESW_DEFAULT_SF_COMP_EQS,
+						   extack);
 }

@@ -278,7 +278,7 @@ out_err:
 	return ret;
 }
 
-static void wcn36xx_stop(struct ieee80211_hw *hw)
+static void wcn36xx_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct wcn36xx *wcn = hw->priv;
 
@@ -1679,10 +1679,10 @@ static const struct of_device_id wcn36xx_of_match[] = {
 MODULE_DEVICE_TABLE(of, wcn36xx_of_match);
 
 static struct platform_driver wcn36xx_driver = {
-	.probe      = wcn36xx_probe,
-	.remove_new = wcn36xx_remove,
-	.driver         = {
-		.name   = "wcn36xx",
+	.probe = wcn36xx_probe,
+	.remove = wcn36xx_remove,
+	.driver = {
+		.name = "wcn36xx",
 		.of_match_table = wcn36xx_of_match,
 	},
 };

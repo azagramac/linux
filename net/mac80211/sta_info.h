@@ -169,7 +169,7 @@ struct sta_info;
  * @buf_size: reorder buffer size at receiver
  * @failed_bar_ssn: ssn of the last failed BAR tx attempt
  * @bar_pending: BAR needs to be re-sent
- * @amsdu: support A-MSDU withing A-MDPU
+ * @amsdu: support A-MSDU within A-MDPU
  * @ssn: starting sequence number of the session
  *
  * This structure's lifetime is managed by RCU, assignments to
@@ -726,6 +726,12 @@ struct sta_info {
 	/* keep last! */
 	struct ieee80211_sta sta;
 };
+
+static inline int ieee80211_tdls_sta_link_id(struct sta_info *sta)
+{
+	/* TDLS STA can only have a single link */
+	return sta->sta.valid_links ? __ffs(sta->sta.valid_links) : 0;
+}
 
 static inline enum nl80211_plink_state sta_plink_state(struct sta_info *sta)
 {

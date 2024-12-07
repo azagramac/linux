@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "debugfs.h"
+#include "debugfs_htt_stats.h"
 
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
@@ -14,14 +15,14 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 	struct ath12k *ar = file->private_data;
 	int ret;
 
-	mutex_lock(&ar->conf_mutex);
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	ret = ath12k_wmi_simulate_radar(ar);
 	if (ret)
 		goto exit;
 
 	ret = count;
 exit:
-	mutex_unlock(&ar->conf_mutex);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 	return ret;
 }
 
@@ -80,11 +81,27 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	/* Create a symlink under ieee80211/phy* */
 	scnprintf(buf, sizeof(buf), "../../ath12k/%pd2", ar->debug.debugfs_pdev);
-	debugfs_create_symlink("ath12k", hw->wiphy->debugfsdir, buf);
+	ar->debug.debugfs_pdev_symlink = debugfs_create_symlink("ath12k",
+								hw->wiphy->debugfsdir,
+								buf);
 
 	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
 		debugfs_create_file("dfs_simulate_radar", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_radar);
 	}
+
+	ath12k_debugfs_htt_stats_register(ar);
+}
+
+void ath12k_debugfs_unregister(struct ath12k *ar)
+{
+	if (!ar->debug.debugfs_pdev)
+		return;
+
+	/* Remove symlink under ieee80211/phy* */
+	debugfs_remove(ar->debug.debugfs_pdev_symlink);
+	debugfs_remove_recursive(ar->debug.debugfs_pdev);
+	ar->debug.debugfs_pdev_symlink = NULL;
+	ar->debug.debugfs_pdev = NULL;
 }

@@ -17,6 +17,7 @@
 #include <asm/early_ioremap.h>
 #include <asm/alternative.h>
 #include <asm/cpufeature.h>
+#include <asm/rsi.h>
 
 /*
  * Generic IO read/write.  These perform native-endian accesses.
@@ -129,17 +130,6 @@ static __always_inline u64 __raw_readq(const volatile void __iomem *addr)
 #define PCI_IOBASE		((void __iomem *)PCI_IO_START)
 
 /*
- * String version of I/O memory access operations.
- */
-extern void __memcpy_fromio(void *, const volatile void __iomem *, size_t);
-extern void __memcpy_toio(volatile void __iomem *, const void *, size_t);
-extern void __memset_io(volatile void __iomem *, int, size_t);
-
-#define memset_io(c,v,l)	__memset_io((c),(v),(l))
-#define memcpy_fromio(a,c,l)	__memcpy_fromio((a),(c),(l))
-#define memcpy_toio(c,a,l)	__memcpy_toio((c),(a),(l))
-
-/*
  * The ARM64 iowrite implementation is intended to support drivers that want to
  * use write combining. For instance PCI drivers using write combining with a 64
  * byte __iowrite64_copy() expect to get a 64 byte MemWr TLP on the PCIe bus.
@@ -153,8 +143,9 @@ extern void __memset_io(volatile void __iomem *, int, size_t);
  * emit the large TLP from the CPU.
  */
 
-static inline void __const_memcpy_toio_aligned32(volatile u32 __iomem *to,
-						 const u32 *from, size_t count)
+static __always_inline void
+__const_memcpy_toio_aligned32(volatile u32 __iomem *to, const u32 *from,
+			      size_t count)
 {
 	switch (count) {
 	case 8:
@@ -196,24 +187,22 @@ static inline void __const_memcpy_toio_aligned32(volatile u32 __iomem *to,
 
 void __iowrite32_copy_full(void __iomem *to, const void *from, size_t count);
 
-static inline void __const_iowrite32_copy(void __iomem *to, const void *from,
-					  size_t count)
+static __always_inline void
+__iowrite32_copy(void __iomem *to, const void *from, size_t count)
 {
-	if (count == 8 || count == 4 || count == 2 || count == 1) {
+	if (__builtin_constant_p(count) &&
+	    (count == 8 || count == 4 || count == 2 || count == 1)) {
 		__const_memcpy_toio_aligned32(to, from, count);
 		dgh();
 	} else {
 		__iowrite32_copy_full(to, from, count);
 	}
 }
+#define __iowrite32_copy __iowrite32_copy
 
-#define __iowrite32_copy(to, from, count)                  \
-	(__builtin_constant_p(count) ?                     \
-		 __const_iowrite32_copy(to, from, count) : \
-		 __iowrite32_copy_full(to, from, count))
-
-static inline void __const_memcpy_toio_aligned64(volatile u64 __iomem *to,
-						 const u64 *from, size_t count)
+static __always_inline void
+__const_memcpy_toio_aligned64(volatile u64 __iomem *to, const u64 *from,
+			      size_t count)
 {
 	switch (count) {
 	case 8:
@@ -255,25 +244,26 @@ static inline void __const_memcpy_toio_aligned64(volatile u64 __iomem *to,
 
 void __iowrite64_copy_full(void __iomem *to, const void *from, size_t count);
 
-static inline void __const_iowrite64_copy(void __iomem *to, const void *from,
-					  size_t count)
+static __always_inline void
+__iowrite64_copy(void __iomem *to, const void *from, size_t count)
 {
-	if (count == 8 || count == 4 || count == 2 || count == 1) {
+	if (__builtin_constant_p(count) &&
+	    (count == 8 || count == 4 || count == 2 || count == 1)) {
 		__const_memcpy_toio_aligned64(to, from, count);
 		dgh();
 	} else {
 		__iowrite64_copy_full(to, from, count);
 	}
 }
-
-#define __iowrite64_copy(to, from, count)                  \
-	(__builtin_constant_p(count) ?                     \
-		 __const_iowrite64_copy(to, from, count) : \
-		 __iowrite64_copy_full(to, from, count))
+#define __iowrite64_copy __iowrite64_copy
 
 /*
  * I/O memory mapping functions.
  */
+
+typedef int (*ioremap_prot_hook_t)(phys_addr_t phys_addr, size_t size,
+				   pgprot_t *prot);
+int arm64_ioremap_prot_hook_register(const ioremap_prot_hook_t hook);
 
 #define ioremap_prot ioremap_prot
 
@@ -317,5 +307,12 @@ extern int valid_mmap_phys_addr_range(unsigned long pfn, size_t size);
 extern bool arch_memremap_can_ram_remap(resource_size_t offset, size_t size,
 					unsigned long flags);
 #define arch_memremap_can_ram_remap arch_memremap_can_ram_remap
+
+static inline bool arm64_is_protected_mmio(phys_addr_t phys_addr, size_t size)
+{
+	if (unlikely(is_realm_world()))
+		return __arm64_is_protected_mmio(phys_addr, size);
+	return false;
+}
 
 #endif	/* __ASM_IO_H */

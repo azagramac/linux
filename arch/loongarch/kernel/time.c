@@ -15,6 +15,7 @@
 
 #include <asm/cpu-features.h>
 #include <asm/loongarch.h>
+#include <asm/paravirt.h>
 #include <asm/time.h>
 
 u64 cpu_clock_freq;
@@ -126,7 +127,11 @@ void sync_counter(void)
 int constant_clockevent_init(void)
 {
 	unsigned int cpu = smp_processor_id();
-	unsigned long min_delta = 0x600;
+#ifdef CONFIG_PREEMPT_RT
+	unsigned long min_delta = 100;
+#else
+	unsigned long min_delta = 1000;
+#endif
 	unsigned long max_delta = (1UL << 48) - 1;
 	struct clock_event_device *cd;
 	static int irq = 0, timer_irq_installed = 0;
@@ -214,4 +219,5 @@ void __init time_init(void)
 
 	constant_clockevent_init();
 	constant_clocksource_init();
+	pv_time_init();
 }

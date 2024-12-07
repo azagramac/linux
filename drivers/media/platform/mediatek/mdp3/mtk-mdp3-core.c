@@ -21,6 +21,9 @@ static const struct of_device_id mdp_of_ids[] = {
 	{ .compatible = "mediatek,mt8183-mdp3-rdma",
 	  .data = &mt8183_mdp_driver_data,
 	},
+	{ .compatible = "mediatek,mt8188-mdp3-rdma",
+	  .data = &mt8188_mdp_driver_data,
+	},
 	{ .compatible = "mediatek,mt8195-mdp3-rdma",
 	  .data = &mt8195_mdp_driver_data,
 	},
@@ -410,7 +413,7 @@ static const struct dev_pm_ops mdp_pm_ops = {
 
 static struct platform_driver mdp_driver = {
 	.probe		= mdp_probe,
-	.remove_new	= mdp_remove,
+	.remove		= mdp_remove,
 	.driver = {
 		.name	= MDP_MODULE_NAME,
 		.pm	= &mdp_pm_ops,

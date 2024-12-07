@@ -225,7 +225,7 @@ __xfs_btree_check_agblock(
 	struct xfs_buf		*bp)
 {
 	struct xfs_mount	*mp = cur->bc_mp;
-	struct xfs_perag	*pag = cur->bc_ag.pag;
+	struct xfs_perag	*pag = to_perag(cur->bc_group);
 	xfs_failaddr_t		fa;
 	xfs_agblock_t		agbno;
 
@@ -331,7 +331,7 @@ __xfs_btree_check_ptr(
 			return -EFSCORRUPTED;
 		break;
 	case XFS_BTREE_TYPE_AG:
-		if (!xfs_verify_agbno(cur->bc_ag.pag,
+		if (!xfs_verify_agbno(to_perag(cur->bc_group),
 				be32_to_cpu((&ptr->s)[index])))
 			return -EFSCORRUPTED;
 		break;
@@ -372,7 +372,7 @@ xfs_btree_check_ptr(
 		case XFS_BTREE_TYPE_AG:
 			xfs_err(cur->bc_mp,
 "AG %u: Corrupt %sbt pointer at level %d index %d.",
-				cur->bc_ag.pag->pag_agno, cur->bc_ops->name,
+				cur->bc_group->xg_gno, cur->bc_ops->name,
 				level, index);
 			break;
 		}
@@ -523,20 +523,8 @@ xfs_btree_del_cursor(
 	ASSERT(!xfs_btree_is_bmap(cur->bc_ops) || cur->bc_bmap.allocated == 0 ||
 	       xfs_is_shutdown(cur->bc_mp) || error != 0);
 
-	switch (cur->bc_ops->type) {
-	case XFS_BTREE_TYPE_AG:
-		if (cur->bc_ag.pag)
-			xfs_perag_put(cur->bc_ag.pag);
-		break;
-	case XFS_BTREE_TYPE_INODE:
-		/* nothing to do */
-		break;
-	case XFS_BTREE_TYPE_MEM:
-		if (cur->bc_mem.pag)
-			xfs_perag_put(cur->bc_mem.pag);
-		break;
-	}
-
+	if (cur->bc_group)
+		xfs_group_put(cur->bc_group);
 	kmem_cache_free(cur->bc_cache, cur);
 }
 
@@ -1017,22 +1005,22 @@ xfs_btree_readahead_agblock(
 	struct xfs_btree_block	*block)
 {
 	struct xfs_mount	*mp = cur->bc_mp;
-	xfs_agnumber_t		agno = cur->bc_ag.pag->pag_agno;
+	struct xfs_perag	*pag = to_perag(cur->bc_group);
 	xfs_agblock_t		left = be32_to_cpu(block->bb_u.s.bb_leftsib);
 	xfs_agblock_t		right = be32_to_cpu(block->bb_u.s.bb_rightsib);
 	int			rval = 0;
 
 	if ((lr & XFS_BTCUR_LEFTRA) && left != NULLAGBLOCK) {
 		xfs_buf_readahead(mp->m_ddev_targp,
-				XFS_AGB_TO_DADDR(mp, agno, left),
-				mp->m_bsize, cur->bc_ops->buf_ops);
+				xfs_agbno_to_daddr(pag, left), mp->m_bsize,
+				cur->bc_ops->buf_ops);
 		rval++;
 	}
 
 	if ((lr & XFS_BTCUR_RIGHTRA) && right != NULLAGBLOCK) {
 		xfs_buf_readahead(mp->m_ddev_targp,
-				XFS_AGB_TO_DADDR(mp, agno, right),
-				mp->m_bsize, cur->bc_ops->buf_ops);
+				xfs_agbno_to_daddr(pag, right), mp->m_bsize,
+				cur->bc_ops->buf_ops);
 		rval++;
 	}
 
@@ -1091,7 +1079,7 @@ xfs_btree_ptr_to_daddr(
 
 	switch (cur->bc_ops->type) {
 	case XFS_BTREE_TYPE_AG:
-		*daddr = XFS_AGB_TO_DADDR(cur->bc_mp, cur->bc_ag.pag->pag_agno,
+		*daddr = xfs_agbno_to_daddr(to_perag(cur->bc_group),
 				be32_to_cpu(ptr->s));
 		break;
 	case XFS_BTREE_TYPE_INODE:
@@ -1313,7 +1301,7 @@ xfs_btree_owner(
 	case XFS_BTREE_TYPE_INODE:
 		return cur->bc_ino.ip->i_ino;
 	case XFS_BTREE_TYPE_AG:
-		return cur->bc_ag.pag->pag_agno;
+		return cur->bc_group->xg_gno;
 	default:
 		ASSERT(0);
 		return 0;
@@ -1329,30 +1317,6 @@ xfs_btree_init_block_cur(
 {
 	xfs_btree_init_buf(cur->bc_mp, bp, cur->bc_ops, level, numrecs,
 			xfs_btree_owner(cur));
-}
-
-/*
- * Return true if ptr is the last record in the btree and
- * we need to track updates to this record.  The decision
- * will be further refined in the update_lastrec method.
- */
-STATIC int
-xfs_btree_is_lastrec(
-	struct xfs_btree_cur	*cur,
-	struct xfs_btree_block	*block,
-	int			level)
-{
-	union xfs_btree_ptr	ptr;
-
-	if (level > 0)
-		return 0;
-	if (!(cur->bc_ops->geom_flags & XFS_BTGEO_LASTREC_UPDATE))
-		return 0;
-
-	xfs_btree_get_sibling(cur, block, &ptr, XFS_BB_RIGHTSIB);
-	if (!xfs_btree_ptr_is_null(cur, &ptr))
-		return 0;
-	return 1;
 }
 
 STATIC void
@@ -2419,15 +2383,6 @@ xfs_btree_update(
 	/* Fill in the new contents and log them. */
 	xfs_btree_copy_recs(cur, rp, rec, 1);
 	xfs_btree_log_recs(cur, bp, ptr, ptr);
-
-	/*
-	 * If we are tracking the last record in the tree and
-	 * we are at the far right edge of the tree, update it.
-	 */
-	if (xfs_btree_is_lastrec(cur, block, 0)) {
-		cur->bc_ops->update_lastrec(cur, block, rec,
-					    ptr, LASTREC_UPDATE);
-	}
 
 	/* Pass new key value up to our parent. */
 	if (xfs_btree_needs_key_update(cur, ptr)) {
@@ -3618,15 +3573,6 @@ xfs_btree_insrec(
 	}
 
 	/*
-	 * If we are tracking the last record in the tree and
-	 * we are at the far right edge of the tree, update it.
-	 */
-	if (xfs_btree_is_lastrec(cur, block, level)) {
-		cur->bc_ops->update_lastrec(cur, block, rec,
-					    ptr, LASTREC_INSREC);
-	}
-
-	/*
 	 * Return the new block number, if any.
 	 * If there is one, give back a record value and a cursor too.
 	 */
@@ -3982,15 +3928,6 @@ xfs_btree_delrec(
 	 */
 	xfs_btree_set_numrecs(block, --numrecs);
 	xfs_btree_log_block(cur, bp, XFS_BB_NUMRECS);
-
-	/*
-	 * If we are tracking the last record in the tree and
-	 * we are at the far right edge of the tree, update it.
-	 */
-	if (xfs_btree_is_lastrec(cur, block, level)) {
-		cur->bc_ops->update_lastrec(cur, block, NULL,
-					    ptr, LASTREC_DELREC);
-	}
 
 	/*
 	 * We're at the root level.  First, shrink the root block in-memory.
@@ -4796,7 +4733,7 @@ xfs_btree_agblock_v5hdr_verify(
 		return __this_address;
 	if (block->bb_u.s.bb_blkno != cpu_to_be64(xfs_buf_daddr(bp)))
 		return __this_address;
-	if (pag && be32_to_cpu(block->bb_u.s.bb_owner) != pag->pag_agno)
+	if (pag && be32_to_cpu(block->bb_u.s.bb_owner) != pag_agno(pag))
 		return __this_address;
 	return NULL;
 }

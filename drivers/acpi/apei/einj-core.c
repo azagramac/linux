@@ -22,7 +22,7 @@
 #include <linux/delay.h>
 #include <linux/mm.h>
 #include <linux/platform_device.h>
-#include <asm/unaligned.h>
+#include <linux/unaligned.h>
 
 #include "apei-internal.h"
 
@@ -880,7 +880,7 @@ static struct platform_device *einj_dev;
  * triggering a section mismatch warning.
  */
 static struct platform_driver einj_driver __refdata = {
-	.remove_new = __exit_p(einj_remove),
+	.remove = __exit_p(einj_remove),
 	.driver = {
 		.name = "acpi-einj",
 	},
@@ -909,7 +909,7 @@ static void __exit einj_exit(void)
 	if (einj_initialized)
 		platform_driver_unregister(&einj_driver);
 
-	platform_device_del(einj_dev);
+	platform_device_unregister(einj_dev);
 }
 
 module_init(einj_init);

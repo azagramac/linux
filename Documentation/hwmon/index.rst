@@ -25,7 +25,6 @@ Hardware Monitoring Kernel Drivers
    acpi_power_meter
    ad7314
    adc128d818
-   adm1021
    adm1025
    adm1026
    adm1031
@@ -58,6 +57,7 @@ Hardware Monitoring Kernel Drivers
    coretemp
    corsair-cpro
    corsair-psu
+   cros_ec_hwmon
    da9052
    da9055
    dell-smm-hwmon
@@ -96,6 +96,7 @@ Hardware Monitoring Kernel Drivers
    ir35221
    ir38064
    ir36021
+   isl28022
    isl68137
    it87
    jc42
@@ -154,7 +155,6 @@ Hardware Monitoring Kernel Drivers
    max34440
    max6620
    max6639
-   max6642
    max6650
    max6697
    max8688
@@ -165,12 +165,17 @@ Hardware Monitoring Kernel Drivers
    mlxreg-fan
    mp2856
    mp2888
+   mp2891
    mp2975
+   mp2993
    mp5023
+   mp5920
    mp5990
+   mp9941
    mpq8785
    nct6683
    nct6775
+   nct7363
    nct7802
    nct7904
    npcm750-pwm-fan
@@ -203,6 +208,7 @@ Hardware Monitoring Kernel Drivers
    sch5636
    scpi-hwmon
    sfctemp
+   sg2042-mcu
    sht15
    sht21
    sht3x
@@ -215,6 +221,7 @@ Hardware Monitoring Kernel Drivers
    smsc47m192
    smsc47m1
    sparx5-temp
+   spd5118
    stpddc60
    surface_fan
    sy7636a-hwmon

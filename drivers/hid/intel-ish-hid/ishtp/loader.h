@@ -10,6 +10,7 @@
 
 #include <linux/bits.h>
 #include <linux/jiffies.h>
+#include <linux/sizes.h>
 #include <linux/types.h>
 
 #include "ishtp-dev.h"
@@ -30,19 +31,23 @@ struct work_struct;
 #define LOADER_XFER_MODE_DMA BIT(0)
 
 /**
- * struct loader_msg_header - ISHTP firmware loader message header
+ * union loader_msg_header - ISHTP firmware loader message header
  * @command: Command type
  * @is_response: Indicates if the message is a response
  * @has_next: Indicates if there is a next message
  * @reserved: Reserved for future use
  * @status: Status of the message
+ * @val32: entire header as a 32-bit value
  */
-struct loader_msg_header {
-	__le32 command:7;
-	__le32 is_response:1;
-	__le32 has_next:1;
-	__le32 reserved:15;
-	__le32 status:8;
+union loader_msg_header {
+	struct {
+		__u32 command:7;
+		__u32 is_response:1;
+		__u32 has_next:1;
+		__u32 reserved:15;
+		__u32 status:8;
+	};
+	__u32 val32;
 };
 
 /**
@@ -51,7 +56,7 @@ struct loader_msg_header {
  * @image_size: Size of the image
  */
 struct loader_xfer_query {
-	struct loader_msg_header header;
+	__le32 header;
 	__le32 image_size;
 };
 
@@ -103,7 +108,7 @@ struct loader_capability {
  * @capability: Loader capability
  */
 struct loader_xfer_query_ack {
-	struct loader_msg_header header;
+	__le32 header;
 	__le16 version_major;
 	__le16 version_minor;
 	__le16 version_hotfix;
@@ -122,7 +127,7 @@ struct loader_xfer_query_ack {
  * @is_last: Is last
  */
 struct loader_xfer_fragment {
-	struct loader_msg_header header;
+	__le32 header;
 	__le32 xfer_mode;
 	__le32 offset;
 	__le32 size;
@@ -134,7 +139,7 @@ struct loader_xfer_fragment {
  * @header: Header of the message
  */
 struct loader_xfer_fragment_ack {
-	struct loader_msg_header header;
+	__le32 header;
 };
 
 /**
@@ -170,7 +175,7 @@ struct loader_xfer_dma_fragment {
  * @header: Header of the message
  */
 struct loader_start {
-	struct loader_msg_header header;
+	__le32 header;
 };
 
 /**
@@ -178,10 +183,11 @@ struct loader_start {
  * @header: Header of the message
  */
 struct loader_start_ack {
-	struct loader_msg_header header;
+	__le32 header;
 };
 
 union loader_recv_message {
+	__le32 header;
 	struct loader_xfer_query_ack query_ack;
 	struct loader_xfer_fragment_ack fragment_ack;
 	struct loader_start_ack start_ack;
@@ -222,5 +228,38 @@ struct ish_firmware_variant {
  * @work: The work structure
  */
 void ishtp_loader_work(struct work_struct *work);
+
+/* ISH Manifest alignment in binary is 4KB aligned */
+#define ISH_MANIFEST_ALIGNMENT SZ_4K
+
+/* Signature for ISH global manifest */
+#define ISH_GLOBAL_SIG 0x47485349	/* FourCC 'I', 'S', 'H', 'G' */
+
+struct version_in_manifest {
+	__le16 major;
+	__le16 minor;
+	__le16 hotfix;
+	__le16 build;
+};
+
+/**
+ * struct ish_global_manifest - global manifest for ISH
+ * @sig_fourcc: Signature FourCC, should be 'I', 'S', 'H', 'G'.
+ * @len: Length of the manifest.
+ * @header_version: Version of the manifest header.
+ * @flags: Flags for additional information.
+ * @base_ver: Base version of Intel's released firmware.
+ * @reserved: Reserved space for future use.
+ * @prj_ver: Vendor-customized project version.
+ */
+struct ish_global_manifest {
+	__le32 sig_fourcc;
+	__le32 len;
+	__le32 header_version;
+	__le32 flags;
+	struct version_in_manifest base_ver;
+	__le32 reserved[13];
+	struct version_in_manifest prj_ver;
+};
 
 #endif /* _ISHTP_LOADER_H_ */

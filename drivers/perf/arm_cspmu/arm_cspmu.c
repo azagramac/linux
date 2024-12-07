@@ -1282,7 +1282,7 @@ static struct platform_driver arm_cspmu_driver = {
 		.suppress_bind_attrs = true,
 	},
 	.probe = arm_cspmu_device_probe,
-	.remove_new = arm_cspmu_device_remove,
+	.remove = arm_cspmu_device_remove,
 	.id_table = arm_cspmu_id,
 };
 
@@ -1427,4 +1427,5 @@ EXPORT_SYMBOL_GPL(arm_cspmu_impl_unregister);
 module_init(arm_cspmu_init);
 module_exit(arm_cspmu_exit);
 
+MODULE_DESCRIPTION("ARM CoreSight Architecture Performance Monitor Driver");
 MODULE_LICENSE("GPL v2");

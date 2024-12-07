@@ -137,7 +137,7 @@ xreap_put_freelist(
 			agfl_bp, agbno, 0);
 	if (error)
 		return error;
-	xfs_extent_busy_insert(sc->tp, sc->sa.pag, agbno, 1,
+	xfs_extent_busy_insert(sc->tp, pag_group(sc->sa.pag), agbno, 1,
 			XFS_EXTENT_BUSY_SKIP_DISCARD);
 
 	return 0;
@@ -263,7 +263,6 @@ xreap_agextent_binval(
 	struct xfs_scrub	*sc = rs->sc;
 	struct xfs_perag	*pag = sc->sa.pag;
 	struct xfs_mount	*mp = sc->mp;
-	xfs_agnumber_t		agno = sc->sa.pag->pag_agno;
 	xfs_agblock_t		agbno_next = agbno + *aglenp;
 	xfs_agblock_t		bno = agbno;
 
@@ -284,7 +283,7 @@ xreap_agextent_binval(
 	 */
 	while (bno < agbno_next) {
 		struct xrep_bufscan	scan = {
-			.daddr		= XFS_AGB_TO_DADDR(mp, agno, bno),
+			.daddr		= xfs_agbno_to_daddr(pag, bno),
 			.max_sectors	= xrep_bufscan_max_sectors(mp,
 							agbno_next - bno),
 			.daddr_step	= XFS_FSB_TO_BB(mp, 1),
@@ -391,7 +390,7 @@ xreap_agextent_iter(
 	xfs_fsblock_t		fsbno;
 	int			error = 0;
 
-	fsbno = XFS_AGB_TO_FSB(sc->mp, sc->sa.pag->pag_agno, agbno);
+	fsbno = xfs_agbno_to_fsb(sc->sa.pag, agbno);
 
 	/*
 	 * If there are other rmappings, this block is cross linked and must
@@ -451,7 +450,7 @@ xreap_agextent_iter(
 
 		xfs_refcount_free_cow_extent(sc->tp, fsbno, *aglenp);
 		error = xfs_free_extent_later(sc->tp, fsbno, *aglenp, NULL,
-				rs->resv, true);
+				rs->resv, XFS_FREE_EXTENT_SKIP_DISCARD);
 		if (error)
 			return error;
 
@@ -477,7 +476,7 @@ xreap_agextent_iter(
 	 * system with large EFIs.
 	 */
 	error = xfs_free_extent_later(sc->tp, fsbno, *aglenp, rs->oinfo,
-			rs->resv, true);
+			rs->resv, XFS_FREE_EXTENT_SKIP_DISCARD);
 	if (error)
 		return error;
 
@@ -780,7 +779,6 @@ xreap_bmapi_binval(
 	xfs_fileoff_t		off;
 	xfs_fileoff_t		max_off;
 	xfs_extlen_t		scan_blocks;
-	xfs_agnumber_t		agno = sc->sa.pag->pag_agno;
 	xfs_agblock_t		bno;
 	xfs_agblock_t		agbno;
 	xfs_agblock_t		agbno_next;
@@ -837,7 +835,7 @@ xreap_bmapi_binval(
 	 */
 	while (bno < agbno_next) {
 		struct xrep_bufscan	scan = {
-			.daddr		= XFS_AGB_TO_DADDR(mp, agno, bno),
+			.daddr		= xfs_agbno_to_daddr(pag, bno),
 			.max_sectors	= xrep_bufscan_max_sectors(mp,
 								scan_blocks),
 			.daddr_step	= XFS_FSB_TO_BB(mp, 1),
@@ -943,7 +941,8 @@ xrep_reap_bmapi_iter(
 	xfs_trans_mod_dquot_byino(sc->tp, ip, XFS_TRANS_DQ_BCOUNT,
 			-(int64_t)imap->br_blockcount);
 	return xfs_free_extent_later(sc->tp, imap->br_startblock,
-			imap->br_blockcount, NULL, XFS_AG_RESV_NONE, true);
+			imap->br_blockcount, NULL, XFS_AG_RESV_NONE,
+			XFS_FREE_EXTENT_SKIP_DISCARD);
 }
 
 /*

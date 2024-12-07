@@ -23,18 +23,39 @@ properties:
   '#pse-cells':
     const: 1
 
+  reset-gpios:
+    maxItems: 1
+
   channels:
     description: each set of 8 ports can be assigned to one physical
       channels or two for PoE4. This parameter describes the configuration
       of the ports conversion matrix that establishes relationship between
       the logical ports and the physical channels.
     type: object
+    additionalProperties: false
+
+    properties:
+      "#address-cells":
+        const: 1
+
+      "#size-cells":
+        const: 0
 
     patternProperties:
       '^channel@[0-7]$':
         type: object
+        additionalProperties: false
+
+        properties:
+          reg:
+            maxItems: 1
+
         required:
           - reg
+
+    required:
+      - "#address-cells"
+      - "#size-cells"
 
 unevaluatedProperties: false
 

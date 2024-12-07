@@ -449,6 +449,20 @@ $(obj)
   to prerequisites are referenced with $(src) (because they are not
   generated files).
 
+$(srcroot)
+  $(srcroot) refers to the root of the source you are building, which can be
+  either the kernel source or the external modules source, depending on whether
+  KBUILD_EXTMOD is set. This can be either a relative or an absolute path, but
+  if KBUILD_ABS_SRCTREE=1 is set, it is always an absolute path.
+
+$(srctree)
+  $(srctree) refers to the root of the kernel source tree. When building the
+  kernel, this is the same as $(srcroot).
+
+$(objtree)
+  $(objtree) refers to the root of the kernel object tree. It is ``.`` when
+  building the kernel, but it is different when building external modules.
+
 $(kecho)
   echoing information to user in a rule is often a good practice
   but when execution ``make -s`` one does not expect to see any output
@@ -578,7 +592,7 @@ cc-option
   Note: cc-option uses KBUILD_CFLAGS for $(CC) options
 
 cc-option-yn
-  cc-option-yn is used to check if gcc supports a given option
+  cc-option-yn is used to check if $(CC) supports a given option
   and return "y" if supported, otherwise "n".
 
   Example::
@@ -596,7 +610,7 @@ cc-option-yn
   Note: cc-option-yn uses KBUILD_CFLAGS for $(CC) options
 
 cc-disable-warning
-  cc-disable-warning checks if gcc supports a given warning and returns
+  cc-disable-warning checks if $(CC) supports a given warning and returns
   the commandline switch to disable it. This special function is needed,
   because gcc 4.4 and later accept any unknown -Wno-* option and only
   warn about it if there is another warning in the source file.
@@ -606,7 +620,7 @@ cc-disable-warning
     KBUILD_CFLAGS += $(call cc-disable-warning, unused-but-set-variable)
 
   In the above example, -Wno-unused-but-set-variable will be added to
-  KBUILD_CFLAGS only if gcc really accepts it.
+  KBUILD_CFLAGS only if $(CC) really accepts it.
 
 gcc-min-version
   gcc-min-version tests if the value of $(CONFIG_GCC_VERSION) is greater than
@@ -1665,6 +1679,5 @@ Credits
 TODO
 ====
 
-- Describe how kbuild supports shipped files with _shipped.
 - Generating offset header files.
 - Add more variables to chapters 7 or 9?

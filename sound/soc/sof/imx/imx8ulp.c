@@ -507,7 +507,7 @@ MODULE_DEVICE_TABLE(of, sof_of_imx8ulp_ids);
 /* DT driver definition */
 static struct platform_driver snd_sof_of_imx8ulp_driver = {
 	.probe = sof_of_probe,
-	.remove_new = sof_of_remove,
+	.remove = sof_of_remove,
 	.driver = {
 		.name = "sof-audio-of-imx8ulp",
 		.pm = &sof_of_pm,
@@ -516,5 +516,6 @@ static struct platform_driver snd_sof_of_imx8ulp_driver = {
 };
 module_platform_driver(snd_sof_of_imx8ulp_driver);
 
-MODULE_IMPORT_NS(SND_SOC_SOF_XTENSA);
 MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("SOF support for IMX8ULP platforms");
+MODULE_IMPORT_NS("SND_SOC_SOF_XTENSA");

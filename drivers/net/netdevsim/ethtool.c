@@ -103,8 +103,10 @@ nsim_set_channels(struct net_device *dev, struct ethtool_channels *ch)
 	struct netdevsim *ns = netdev_priv(dev);
 	int err;
 
+	mutex_lock(&dev->lock);
 	err = netif_set_real_num_queues(dev, ch->combined_count,
 					ch->combined_count);
+	mutex_unlock(&dev->lock);
 	if (err)
 		return err;
 
@@ -148,7 +150,7 @@ nsim_get_fec_stats(struct net_device *dev, struct ethtool_fec_stats *fec_stats)
 }
 
 static int nsim_get_ts_info(struct net_device *dev,
-			    struct ethtool_ts_info *info)
+			    struct kernel_ethtool_ts_info *info)
 {
 	struct netdevsim *ns = netdev_priv(dev);
 

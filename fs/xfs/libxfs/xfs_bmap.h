@@ -248,7 +248,7 @@ struct xfs_bmap_intent {
 	enum xfs_bmap_intent_type		bi_type;
 	int					bi_whichfork;
 	struct xfs_inode			*bi_owner;
-	struct xfs_perag			*bi_pag;
+	struct xfs_group			*bi_group;
 	struct xfs_bmbt_irec			bi_bmap;
 };
 
@@ -295,5 +295,8 @@ typedef int (*xfs_bmap_query_range_fn)(
 
 int xfs_bmap_query_all(struct xfs_btree_cur *cur, xfs_bmap_query_range_fn fn,
 		void *priv);
+
+xfs_extlen_t	xfs_get_extsz_hint(struct xfs_inode *ip);
+xfs_extlen_t	xfs_get_cowextsz_hint(struct xfs_inode *ip);
 
 #endif	/* __XFS_BMAP_H__ */
